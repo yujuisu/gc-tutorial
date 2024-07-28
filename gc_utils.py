@@ -69,7 +69,7 @@ def assert_blade(V):
 def assert_simple(A):
     assert_blade(A)
     Asquare = A**2
-    assert np.max(np.abs(Asq[1:])) < 1e-8
+    assert np.max(np.abs(Asquare[1:])) < 1e-8
     return Asquare
 
 

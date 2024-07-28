@@ -63,7 +63,7 @@ def create_r_blade(r, alg):
 
 
 def P(a, A):
-    return ((a | A) | A) / A**2
+    return (1/(A**2)[0])*((a|A)|A)
 
 
 def max_grade(B):

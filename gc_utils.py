@@ -16,8 +16,8 @@ def max_diff(A, B):
     return np.max(np.abs((A - B)[:]))
 
 
-def assert_diff(A, B):
-    assert max_diff(A, B) < 1e-10
+def assert_diff(A, B, err=1e-10):
+    assert max_diff(A, B) < err
 
 
 def even_grades(A):
@@ -29,15 +29,13 @@ def odd_grades(A):
 
 
 def inner(A, B):
-    return (A - A.grade(0)) | (B - B.grade(0))
+    if isinstance(A, MultiVector) and isinstance(B, MultiVector):
+        return (A - A.grade(0)) | (B - B.grade(0))
+    return 0
 
 
 def create_r_vectors(r, alg):
     return [create_random_multivector(alg).grade(1) for _ in range(r)]
-
-
-def product(vectors):
-    return reduce(lambda a, b: a * b, vectors)
 
 
 def cyclic_reorder(_v, k):
@@ -52,6 +50,12 @@ def wedge(vectors) -> MultiVector:
     if len(vectors) == 0:
         return 1
     return reduce(lambda a, b: a ^ b, vectors)
+
+
+def gprod(vectors) -> MultiVector:
+    if len(vectors) == 0:
+        return 1
+    return reduce(lambda a, b: a * b, vectors)
 
 
 def create_r_blade(r, alg):
@@ -83,7 +87,7 @@ def reciprocal(vectors):
     An = wedge(vectors)
     n = len(vectors)
     return [
-        (-1) ** (k+n-1) * (An | wedge(vectors[:k] + vectors[k + 1:])) / An**2
+        (-1) ** (k + n - 1) * (An | wedge(vectors[:k] + vectors[k + 1:])) / An**2
         for k in range(n)
     ]
 
@@ -126,3 +130,7 @@ def multi_frame(vectors, reverse=False):
 
 def reci_frame(vectors):
     return multi_frame(reciprocal(vectors), reverse=True)
+
+
+def normsq(X):
+    return X.sp(X.reverse())[0]

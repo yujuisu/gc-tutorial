@@ -62,8 +62,20 @@ def create_r_blade(r, alg):
     return wedge(create_r_vectors(r, alg))
 
 
-def P(a, A):
-    return (1/(A**2)[0])*((a|A)|A)
+def assert_blade(V):
+    assert len(V.grades) == 1, 'not a blade'
+
+
+def assert_simple(A):
+    assert_blade(A)
+    Asquare = A**2
+    assert np.max(np.abs(Asq[1:])) < 1e-8
+    return Asquare
+
+
+def P(a, A):  # projection of a onto a simple blade A
+    Asquare = assert_simple(A)
+    return (1/Asquare[0])*((a|A)|A)
 
 
 def max_grade(B):

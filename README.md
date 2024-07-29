@@ -1,4 +1,4 @@
-My reading notes and numerical implements of Hestenes' Clifford Algebra to Geometric Calculus
+My reading notes and numerical implements of David Hestenes and Garret Sobczyk's Clifford Algebra to Geometric Calculus
 
 ### Install
 pip install kingdon 1.0.6

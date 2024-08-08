@@ -195,6 +195,13 @@ def extract_first_value(obj):
         return obj  # Return None if the object is neither a list nor an integer
 
 
+def extract_scalar(obj):
+    if isinstance(obj, (MultiVector, list)):
+        return obj[0]
+    if isinstance(obj, (int, float)):
+        return obj
+
+
 def blade_split(Ar, alg):
     r = Ar.grades[0]
     projects = [P(e, Ar) for e in alg.frame[:r]]
@@ -226,11 +233,12 @@ def skew_symmetrizer(F, vectors, alg, h=1e-6):
     return (1/factorial(r)) * drF
 
 
-def simplicial_derivative(F, vectors, alg):
-    frame = alg.frame
-    r_frame = reciprocal(alg.frame)
+def simplicial_derivative(F, vectors, alg, h=1e-6, frame=None, r_frame=None):
+    if not frame:
+        frame = alg.frame
+        r_frame = reciprocal(alg.frame)
     drF = 0
     r = len(vectors)
     for base_vectors, reci_vectors in zip(permutations(frame, r), permutations(r_frame, r)):
-        drF += wedge(base_vectors[::-1]) * vectors_partial(F, vectors, reci_vectors)
+        drF += wedge(base_vectors[::-1]) * vectors_partial(F, vectors, reci_vectors, h=h)
     return (1/factorial(r)) * drF

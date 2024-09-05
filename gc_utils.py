@@ -63,15 +63,18 @@ def create_r_blade(r, alg):
     return wedge(create_r_vectors(r, alg))
 
 
-def assert_blade(V):
-    assert len(V.grades) == 1, 'not a blade'
-
-
-def assert_simple(A):
-    assert_blade(A)
+def assert_simple(A, tol=1e-8):
     Asquare = A**2
     if Asquare[1:]:
-        assert np.max(np.abs(Asquare[1:])) < 1e-8
+        assert np.max(np.abs(Asquare[1:])) < tol, "not simple"
+    return Asquare
+
+
+def assert_not_simple(A, tol=1e-6):
+    Asquare = A**2
+    assert len(Asquare.grades) > 1, "simple"
+    if Asquare[1:]:
+        assert np.max(np.abs(Asquare[1:])) > tol, "simple"
     return Asquare
 
 
@@ -97,13 +100,22 @@ def gram_schmidt(vectors):
     return o_vecs
 
 
-def reciprocal(vectors):
-    An = wedge(vectors)
-    n = len(vectors)
-    return [
-        (-1) ** (k + n - 1) * (An | wedge(vectors[:k] + vectors[k + 1:])) / An**2
-        for k in range(n)
-    ]
+# def reciprocal(vectors):
+#     An = wedge(vectors)
+#     n = len(vectors)
+#     return [
+#         (-1) ** (k + n - 1) * (An | wedge(vectors[:k] + vectors[k + 1:])) / An**2
+#         for k in range(n)
+#     ]
+
+
+def reciprocal(blades):
+    I = wedge(blades)
+    dualblades = []
+    for k in range(len(blades)):
+        sign = (-1) ** (blades[k].grades[0] * sum(blade.grades[0] for blade in blades[:k]))
+        dualblades.append(sign * wedge(blades[:k] + blades[k+1:]) * I.inv())
+    return dualblades
 
 
 def multiindex(n, r):
@@ -164,6 +176,10 @@ def normsq(X):
     return X.sp(X.reverse())[0]
 
 
+def norm(A):
+    return np.sqrt(normsq(A))
+
+
 def differential(F, X, A, h=1e-6):
     d = (h)*A
     return (1/(2*h))*F(X+d) - (1/(2*h))*F(X-d)
@@ -180,6 +196,20 @@ def derivative(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
     dF = 0
     for v, r in zip(frame, r_frame):
         dF += r * (differential(F, X, v, h))
+    return dF
+
+
+def curl(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
+    if not frame:
+        if grade or (grade == 0):
+            frame = r_vector_frame(alg.frame, grade)
+            r_frame = r_vector_frame(reciprocal(alg.frame), grade, reverse=True)
+        else:
+            frame = multi_frame(alg.frame)
+            r_frame = reci_frame(alg.frame)
+    dF = 0
+    for v, r in zip(frame, r_frame):
+        dF += r ^ (differential(F, X, v, h))
     return dF
 
 
@@ -207,7 +237,8 @@ def blade_split(Ar, alg):
     projects = [P(e, Ar) for e in alg.frame[:r]]
     wed = wedge(projects)
     ratio = extract_first_value(Ar[:])/extract_first_value(wed[:])
-    return projects, ratio
+    projects[0] *= ratio
+    return projects
 
 
 def vectors_partial(F, vectors, directions, h=1e-6):
@@ -242,3 +273,23 @@ def simplicial_derivative(F, vectors, alg, h=1e-6, frame=None, r_frame=None):
     for base_vectors, reci_vectors in zip(permutations(frame, r), permutations(r_frame, r)):
         drF += wedge(base_vectors[::-1]) * vectors_partial(F, vectors, reci_vectors, h=h)
     return (1/factorial(r)) * drF
+
+
+def terms_ratio(A, B: MultiVector):
+    valid_keys = [k for k in B.keys() if not np.isclose(B[k], 0)]
+    return np.divide([A[k] for k in valid_keys], [B[k] for k in valid_keys])
+
+
+def blade_exp(B) -> MultiVector:
+    t = norm(B)
+    b = B / t
+    if (B ** 2)[0] > 0:
+        return (np.cosh(t) + np.sinh(t) * b)
+    else:
+        return (np.cos(t) + np.sin(t) * b)
+
+
+def blade_log(e):
+    b = e.grade(2).normalized()
+    t = np.arccos(e[0])
+    return t * b

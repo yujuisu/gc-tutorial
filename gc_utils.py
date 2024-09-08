@@ -5,11 +5,9 @@ from kingdon import Algebra, MultiVector
 from math import factorial
 
 
-def create_random_multivector(alg: Algebra, normalized=False):
+def create_random_multivector(alg: Algebra):
     n = len(alg.blades.blades.keys())
     vec = np.random.random(n)
-    if normalized:
-        vec = vec / (vec**2).sum()
     return alg.multivector(vec)
 
 

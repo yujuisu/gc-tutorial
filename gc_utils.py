@@ -98,15 +98,6 @@ def gram_schmidt(vectors):
     return o_vecs
 
 
-# def reciprocal(vectors):
-#     An = wedge(vectors)
-#     n = len(vectors)
-#     return [
-#         (-1) ** (k + n - 1) * (An | wedge(vectors[:k] + vectors[k + 1:])) / An**2
-#         for k in range(n)
-#     ]
-
-
 def reciprocal(blades):
     I = wedge(blades)
     dualblades = []

@@ -230,11 +230,15 @@ def extract_scalar(obj):
         return obj
 
 
-def blade_split(Ar, alg):
-    r = Ar.grades[0]
-    projects = [P(e, Ar) for e in alg.frame[:r]]
-    wed = wedge(projects)
-    ratio = extract_first_value(Ar[:])/extract_first_value(wed[:])
+def sort_grades_by_normsq(A):
+    return sorted([(A.grade(g), g) for g in A.grades], key=lambda item: normsq(item[0]))
+
+
+def blade_split(A, alg):
+    Ar, g = sort_grades_by_normsq(A)[-1]
+    projects = sorted([P(e, Ar) for e in alg.frame], key=normsq)[-g:]
+    wed = gprod(projects)
+    ratio = np.median(terms_ratio(wed, Ar))
     projects[0] *= ratio
     return projects
 

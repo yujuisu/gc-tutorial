@@ -64,8 +64,8 @@ def create_r_blade(r, alg):
 def assert_simple(A, tol=1e-8):
     Asquare = A**2
     if Asquare[1:]:
-        assert np.max(np.abs(Asquare[1:])) < tol, "not simple"
-    return Asquare
+        assert np.max(np.abs(Asquare[1:])) < tol, f"{tol}, not simple"
+    return Asquare[0]
 
 
 def assert_not_simple(A, tol=1e-6):
@@ -73,12 +73,14 @@ def assert_not_simple(A, tol=1e-6):
     assert len(Asquare.grades) > 1, "simple"
     if Asquare[1:]:
         assert np.max(np.abs(Asquare[1:])) > tol, "simple"
-    return Asquare
+    return Asquare[0]
 
 
-def P(a, A):  # projection of a onto a simple blade A
+def P(a, A, tol=1e-6):  # projection of a onto a simple blade A
     Asquare = assert_simple(A)
-    return (1/Asquare[0])*((a|A)|A)
+    if abs(Asquare) < tol:
+        return (a|A)|A
+    return (1/Asquare)*((a|A)|A)
 
 
 def max_grade(B):
@@ -162,16 +164,20 @@ def reci_frame(vectors):
 
 
 def normsq(X):
-    return X.sp(X.reverse())[0]
+    return abs(X.sp(X.reverse())[0])
 
 
 def norm(A):
     return np.sqrt(normsq(A))
 
 
-def differential(F, X, A, h=1e-6):
+def difference(F, X, A, h=1e-6):
     d = (h)*A
-    return (1/(2*h))*F(X+d) - (1/(2*h))*F(X-d)
+    return F(X+d) - F(X-d)
+
+
+def differential(F, X, A, h=1e-6):
+    return (1/(2*h))*difference(F, X, A, h)
 
 
 def derivative(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
@@ -182,10 +188,7 @@ def derivative(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
         else:
             frame = multi_frame(alg.frame)
             r_frame = reci_frame(alg.frame)
-    dF = 0
-    for v, r in zip(frame, r_frame):
-        dF += r * (differential(F, X, v, h))
-    return dF
+    return sum(r * (differential(F, X, v, h)) for v, r in zip(frame, r_frame))
 
 
 def curl(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
@@ -196,10 +199,7 @@ def curl(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
         else:
             frame = multi_frame(alg.frame)
             r_frame = reci_frame(alg.frame)
-    dF = 0
-    for v, r in zip(frame, r_frame):
-        dF += r ^ (differential(F, X, v, h))
-    return dF
+    return sum(r ^ (differential(F, X, v, h)) for v, r in zip(frame, r_frame))
 
 
 def adjoint(F, X, A, alg: Algebra, h=1e-6, frame=None, r_frame=None):
@@ -236,24 +236,40 @@ def blade_split(A, alg):
 
 def vectors_partial(F, vectors, directions, h=1e-6):
     r = len(vectors)
-    drF = 0
-    for offset in product([1,-1], repeat=r):
-        offset = np.array(offset)
-        coef = np.prod(offset)
-        offset = offset * h
-        drF += 1/(2*h)**r * coef * F([a+v*d for a, v, d in zip(vectors, directions, offset)])
-    return drF
+    offsets = np.array(list(product([1, -1], repeat=r)), dtype=np.float64)
+    coefs = np.prod(offsets, axis=1)
+    offsets *= h
+    points = (
+        [v + d * o for v, d, o in zip(vectors, directions, offset)]
+        for offset in offsets
+        )
+    drF = sum(coef * F(point) for coef, point in zip(coefs, points))
+    return 1/(2*h)**r * drF
 
 
-def skew_symmetrizer(F, vectors, alg, h=1e-6):
-    frame = alg.frame
-    r_frame = reciprocal(alg.frame)
+# def skew_symmetrizer(F, vectors, alg, h=1e-6):
+#     frame = alg.frame
+#     r_frame = reciprocal(alg.frame)
+#     drF = 0
+#     r = len(vectors)
+#     Ar = wedge(vectors)
+#     for base_vectors, reci_vectors in zip(permutations(frame, r), permutations(r_frame, r)):
+#         # if F is linear, vectors cause no difference in vectors_partial. The input can be just Ar.
+#         drF += (Ar | wedge(base_vectors[::-1])) * vectors_partial(F, vectors, reci_vectors, h)
+#     return (1/factorial(r)) * drF
+
+
+def skew_symmetrizer(F, Ar, alg, h=1e-6, frame=None, r_frame=None):
+    if not frame:
+        frame = alg.frame
+        r_frame = reciprocal(alg.frame)
     drF = 0
-    r = len(vectors)
-    Ar = wedge(vectors)
+    r = Ar.grades[0]
     for base_vectors, reci_vectors in zip(permutations(frame, r), permutations(r_frame, r)):
-        # if F is linear, vectors cause no difference in vectors_partial. The input is just Ar.
-        drF += (Ar | wedge(base_vectors[::-1])) * vectors_partial(F, vectors, reci_vectors, h)
+        # if F is linear, vectors cause no difference in vectors_partial. The input can be just Ar.
+        # So actually we allow Ar being any multivector
+        # I use np.zeros(r) to replace vectors
+        drF += (Ar.sp(wedge(base_vectors[::-1]))) * vectors_partial(F, np.zeros(r), reci_vectors, h=h)
     return (1/factorial(r)) * drF
 
 
@@ -286,3 +302,81 @@ def blade_log(e):
     b = e.grade(2).normalized()
     t = np.arccos(e[0])
     return t * b
+
+
+def matrix2trans(M, alg:Algebra ):
+    d = alg.d
+    assert M.shape[0] == d, 'dimension not fit'
+    return lambda x: sum(c*e for c,e in zip(np.dot(M, x.asfullmv()[1:d+1]), alg.frame))
+
+
+def simple_rotor_sqrt(R):
+    # for rotations only, don't use on screw motions
+    R_norm = norm(R+1)
+    assert R_norm >= 1e-4, "no explicit square root for -1"
+    return (R + 1)/R_norm
+
+
+def divergence(f, alg):
+    return sum(vr | f(v) for v, vr in zip(alg.frame, reciprocal(alg.frame)))
+
+
+def outermorphism(f, A: MultiVector, alg, h=1e-6, frame=None, r_frame=None):
+    wf = lambda vectors: wedge([f(v) for v in vectors])
+    outer = 0
+    for r in A.grades:
+        if r == 0:
+            outer += A.grade(0)
+            continue
+        outer += skew_symmetrizer(wf, A.grade(r), alg, h, frame, r_frame)
+    return outer
+
+
+def adjoint_outermorphism(f, A, alg, h=1e-6, frame=None, r_frame=None):
+    F = lambda vectors: wedge([f(v) for v in vectors]).sp(A)
+    outer = 0
+    for r in A.grades:
+        if r == 0:
+            outer += A.grade(0)
+            continue
+        # Why np.zeros(r)? The derivative of a linear function is constant
+        outer += simplicial_derivative(F, np.zeros(r), alg, h, frame, r_frame)
+    return outer
+
+
+def sym_part(f, alg):
+    return lambda x: (f(x) + adjoint_outermorphism(f, x, alg))/2
+
+
+def skew_part(f, alg):
+    return lambda x: (f(x) - adjoint_outermorphism(f, x, alg))/2
+
+
+def wedge_power(A, r):
+    if r == 0:
+        return 1
+    result = A
+    for _ in range(r-1):
+        result = A ^ result
+    return result
+
+
+def bivector_split(F, alg: Algebra):
+    m = alg.d // 2
+    if m <= 1:
+        return F
+    Ck = [(1/factorial(r))*wedge_power(F, r) for r in range(m+1)]
+    Ck2 = [(-1)**(m - i) * alg.sp(Ck[i], Ck[i])[0] for i in range(m+1)]
+    Lk = np.roots(Ck2)
+    mv_map_list = [{} for _ in range(m)]
+    ck_inner_list = [alg.ip(Ck[i-1], Ck[i]) for i in range(1, m+1)]
+    mv_keys = set.union(*(set(ck.keys()) for ck in ck_inner_list if isinstance(ck, MultiVector)))
+    linear_eq_matrix = np.array([[np.prod(Lk[i:i+k]) for i in range(m)] for k in range(m)])
+    inv_matrix = np.linalg.inv(linear_eq_matrix)
+    for key in mv_keys:
+        if all([np.isclose(ck[key],0) for ck in ck_inner_list]):
+            continue
+        ans = np.dot(inv_matrix, [ck[key] for ck in ck_inner_list])
+        for i, v in enumerate(ans):
+            mv_map_list[i][key] = v
+    return [alg.multivector(mv_map) for mv_map in mv_map_list]

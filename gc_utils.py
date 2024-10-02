@@ -322,19 +322,27 @@ def terms_ratio(A, B: MultiVector):
     return np.divide([A[k] for k in valid_keys], [B[k] for k in valid_keys])
 
 
-def blade_exp(B) -> MultiVector:
+def blade_exp(B, tol=1e-6) -> MultiVector:
+    signature = (B**2)[0]
+    if abs(signature) < tol:
+        return 1 + B
     t = norm(B)
     b = B / t
-    if (B**2)[0] > 0:
+    if signature > tol:
         return np.cosh(t) + np.sinh(t) * b
-    else:
+    if signature < -tol:
         return np.cos(t) + np.sin(t) * b
+    
 
-
-def blade_log(e):
-    b = e.grade(2).normalized()
-    t = np.arccos(e[0])
-    return t * b
+def simple_rotor_log(R: MultiVector, tol=1e-6):
+    blade = R.grade(2)
+    signature = (blade ** 2)[0]
+    if signature > tol:
+        return np.arccosh(R[0]) / norm(blade) * blade
+    if signature < -tol:
+        return np.arccos(R[0]) / norm(blade) * blade
+    else:
+        return blade
 
 
 def matrix2trans(M, alg: Algebra):
@@ -428,3 +436,8 @@ def trans2matrix(f, alg):
 
 def det(f, I, Ip: MultiVector, alg):
     return (outermorphism(f, I, alg) * Ip.reverse() / normsq(Ip))[0]
+
+
+def random_versor(r, alg):
+    return gprod(random_r_vectors(r, alg))
+

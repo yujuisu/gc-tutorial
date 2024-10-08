@@ -45,6 +45,27 @@ def cross(A, B):
     return (A * B - B * A) / 2
 
 
+def normsq(A: MultiVector):
+    return abs(A.sp(A.reverse())[0])
+
+
+def norm(A):
+    return np.sqrt(normsq(A))
+
+
+def normalize(A, tol=1e-6):
+    n = norm(A)
+    assert n > tol, "zero norm"
+    return A / n
+
+
+def inv(A: MultiVector, tol=1e-6):
+    Ar = A.reverse()
+    n = A.sp(Ar)[0]
+    assert abs(n) > tol, f"norm {n}"
+    return Ar / n
+
+
 def is_null_generator(gen):
     try:
         next(gen)
@@ -69,7 +90,7 @@ def wedge(vectors) -> MultiVector:
 
 
 def gprod(vectors) -> MultiVector:
-    if is_null(vectors):
+    if is_null(vectors): # FIXME strange behavior for generators
         return 1
     return reduce(lambda a, b: a * b, vectors)
 
@@ -83,7 +104,7 @@ def assert_simple(A, tol=1e-8):
     if isinstance(A, (int, float)):
         return Asquare
     if Asquare[1:]:
-        assert np.max(np.abs(Asquare[1:])) < tol, f"{tol}, not simple"
+        assert np.max(np.abs(Asquare[1:])) < tol, f"{Asquare}, not simple"
     return Asquare[0]
 
 
@@ -95,18 +116,18 @@ def assert_not_simple(A, tol=1e-6):
     return Asquare[0]
 
 
-def P(a, A, tol=1e-6):  # projection of a onto a simple blade A
+def P(X, A, tol=1e-6):  # projection of X onto a simple blade A
     Asquare = assert_simple(A)
     if abs(Asquare) < tol:
-        return (a | A) | A
-    return (1 / Asquare) * ((a | A) | A)
+        return (X | A) | A
+    return (1 / Asquare) * ((X | A) | A)
 
 
-def max_grade(B):
+def max_grade(B, tol=1e-6):
     for r in B.grades[::-1]:
         Br = B.grade(r)
-        if np.max(np.abs(Br[:])) > 1e-8:
-            return Br
+        if np.max(np.abs(Br[:])) > tol:
+            return r, Br
 
 
 def gram_schmidt(vectors):
@@ -120,13 +141,13 @@ def gram_schmidt(vectors):
 
 
 def reciprocal(blades):
-    I = wedge(blades)
+    invI = inv(wedge(blades))
     dualblades = []
     for k in range(len(blades)):
         sign = (-1) ** (
             blades[k].grades[0] * sum(blade.grades[0] for blade in blades[:k])
         )
-        dualblades.append(sign * wedge(blades[:k] + blades[k + 1 :]) * I.inv())
+        dualblades.append(sign * wedge(blades[:k] + blades[k + 1:]) * invI)
     return dualblades
 
 
@@ -184,14 +205,6 @@ def reci_frame(vectors):
     return multi_frame(reciprocal(vectors), reverse=True)
 
 
-def normsq(X):
-    return abs(X.sp(X.reverse())[0])
-
-
-def norm(A):
-    return np.sqrt(normsq(A))
-
-
 def difference(F, X, A, h=1e-6):
     d = (h) * A
     return F(X + d) - F(X - d)
@@ -221,6 +234,17 @@ def curl(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
             frame = multi_frame(alg.frame)
             r_frame = reci_frame(alg.frame)
     return sum(r ^ (differential(F, X, v, h)) for v, r in zip(frame, r_frame))
+
+
+def div(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
+    if not frame:
+        if grade or (grade == 0):
+            frame = r_vector_frame(alg.frame, grade)
+            r_frame = r_vector_frame(reciprocal(alg.frame), grade, reverse=True)
+        else:
+            frame = multi_frame(alg.frame)
+            r_frame = reci_frame(alg.frame)
+    return sum(inner(r, differential(F, X, v, h)) for v, r in zip(frame, r_frame))
 
 
 def adjoint(F, X, A, alg: Algebra, h=1e-6, frame=None, r_frame=None):
@@ -358,10 +382,6 @@ def simple_rotor_sqrt(R):
     R_norm = norm(R + 1)
     assert R_norm >= 1e-4, "no explicit square root for -1"
     return (R + 1) / R_norm
-
-
-def divergence(f, alg):
-    return sum(vr | f(v) for v, vr in zip(alg.frame, reciprocal(alg.frame)))
 
 
 def outermorphism(f, A: MultiVector, alg, h=1e-6, frame=None, r_frame=None):

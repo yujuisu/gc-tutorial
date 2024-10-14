@@ -104,7 +104,7 @@ def assert_simple(A, tol=1e-8):
     if isinstance(A, (int, float)):
         return Asquare
     if Asquare[1:]:
-        assert np.max(np.abs(Asquare[1:])) < tol, f"{Asquare}, not simple"
+        assert np.max(np.abs(Asquare[1:])) < tol, f"{Asquare[1:]}, not simple"
     return Asquare[0]
 
 

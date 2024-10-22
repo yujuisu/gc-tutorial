@@ -214,7 +214,9 @@ def differential(F, X, A, h=1e-6):
     return (1 / (2 * h)) * difference(F, X, A, h)
 
 
-def derivative(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
+def derivative(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None, operator=None):
+    if not operator:
+        operator = alg.gp
     if not frame:
         if grade or (grade == 0):
             frame = r_vector_frame(alg.frame, grade)
@@ -222,29 +224,15 @@ def derivative(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
         else:
             frame = multi_frame(alg.frame)
             r_frame = reci_frame(alg.frame)
-    return sum(r * (differential(F, X, v, h)) for v, r in zip(frame, r_frame))
+    return sum(operator(r, differential(F, X, v, h)) for v, r in zip(frame, r_frame))
 
 
-def curl(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
-    if not frame:
-        if grade or (grade == 0):
-            frame = r_vector_frame(alg.frame, grade)
-            r_frame = r_vector_frame(reciprocal(alg.frame), grade, reverse=True)
-        else:
-            frame = multi_frame(alg.frame)
-            r_frame = reci_frame(alg.frame)
-    return sum(r ^ (differential(F, X, v, h)) for v, r in zip(frame, r_frame))
+def curl(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
+    return derivative(F, X, alg, h, grade, frame, r_frame, operator=alg.op)
 
 
-def div(F, X, alg, h=1e-6, grade=None, frame=None, r_frame=None):
-    if not frame:
-        if grade or (grade == 0):
-            frame = r_vector_frame(alg.frame, grade)
-            r_frame = r_vector_frame(reciprocal(alg.frame), grade, reverse=True)
-        else:
-            frame = multi_frame(alg.frame)
-            r_frame = reci_frame(alg.frame)
-    return sum(inner(r, differential(F, X, v, h)) for v, r in zip(frame, r_frame))
+def div(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
+    return derivative(F, X, alg, h, grade, frame, r_frame, operator=inner)
 
 
 def adjoint(F, X, A, alg: Algebra, h=1e-6, frame=None, r_frame=None):

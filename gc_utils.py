@@ -66,33 +66,27 @@ def inv(A: MultiVector, tol=1e-6):
     return Ar / n
 
 
-def is_null_generator(gen):
-    try:
-        next(gen)
-        return False  # If we successfully retrieve a value, it's not null
-    except StopIteration:
-        return True  # If we get StopIteration immediately, it's null
+# def is_null_generator(gen):
+#     for _ in gen:
+#         return False  # If we retrieve any value, it's not null
+#     return True
 
 
-def is_null(obj):
-    if isinstance(obj, list | tuple):
-        return len(obj) == 0  # Check if the list is empty
-    elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes)):
-        return is_null_generator(obj)
-    else:
-        raise TypeError("Object is neither a list nor a generator.")
+# def is_null(obj):
+#     if isinstance(obj, list | tuple):
+#         return len(obj) == 0  # Check if the list is empty
+#     elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes)):
+#         return is_null_generator(obj)
+#     else:
+#         raise TypeError("Object is neither a list nor a generator.")
 
 
 def wedge(vectors) -> MultiVector:
-    if is_null(vectors):
-        return 1
-    return reduce(lambda a, b: a ^ b, vectors)
+    return reduce(lambda a, b: a ^ b, vectors, 1)
 
 
 def gprod(vectors) -> MultiVector:
-    if is_null(vectors): # FIXME strange behavior for generators
-        return 1
-    return reduce(lambda a, b: a * b, vectors)
+    return reduce(lambda a, b: a * b, vectors, 1)
 
 
 def random_r_blade(r, alg):
@@ -235,9 +229,9 @@ def div(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
     return derivative(F, X, alg, h, grade, frame, r_frame, operator=inner)
 
 
-def adjoint(F, X, A, alg: Algebra, h=1e-6, frame=None, r_frame=None):
+def adjoint(F, X, A, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
     _F = derivative(
-        lambda X: alg.sp(F(X), (A)), X, alg, h=h, frame=frame, r_frame=r_frame
+        lambda X: alg.sp(F(X), (A)), X, alg, h=h, grade=grade, frame=frame, r_frame=r_frame
     )
     return _F
 
@@ -350,9 +344,9 @@ def simple_rotor_log(R: MultiVector, tol=1e-6):
     blade = R.grade(2)
     signature = (blade ** 2)[0]
     if signature > tol:
-        return np.arccosh(R[0]) / norm(blade) * blade
+        return np.arccosh(R[0]) * normalize(blade)
     if signature < -tol:
-        return np.arccos(R[0]) / norm(blade) * blade
+        return np.arccos(R[0]) * normalize(blade)
     else:
         return blade
 
@@ -437,7 +431,7 @@ def bivector_split(F, alg: Algebra):
     return [alg.multivector(mv_map) for mv_map in mv_map_list]
 
 
-def trans2matrix(f, alg):
+def trans2matrix(f, alg: Algebra):
     values = [f(a) for a in alg.frame]
     return np.array([[ar.sp(v)[0] for v in values] for ar in reciprocal(alg.frame)])
 
@@ -449,3 +443,35 @@ def det(f, I, Ip: MultiVector, alg):
 def random_versor(r, alg):
     return gprod(random_r_vectors(r, alg))
 
+
+def check_isometry(f, alg, g=None, tol=1e-6):
+    x, y = random_r_vectors(2, alg)
+    if g:
+        return max_diff(f(x) | g(f(y)), x | g(y)) < tol
+    return max_diff(f(x) | f(y), x | y) < tol
+
+
+# def check_symmetry(f, alg, tol=1e-6, grade=1):
+#     x, y = (random_r_blade(grade, alg) for _ in range(2))
+#     return max_diff(y | f(x), f(y) | x) < tol
+
+
+def check_symmetry(F, alg: Algebra, tol=1e-6, grade=None):
+    if grade:
+        X = random_r_blade(grade, alg)
+    else:
+        X = random_multivector(alg)
+    return max_diff(adjoint(F, 0, X, alg, grade=grade), F(X)) < tol
+
+
+# def check_skew(f, alg, tol=1e-6, grade=1):
+#     x, y = (random_r_blade(grade, alg) for _ in range(2))
+#     return max_diff(y | f(x), -f(y) | x) < tol
+
+
+def check_skew(F, alg: Algebra, tol=1e-6, grade=None):
+    if grade:
+        X = random_r_blade(grade, alg)
+    else:
+        X = random_multivector(alg)
+    return max_diff(adjoint(F, 0, X, alg, grade=grade), -F(X)) < tol

@@ -62,7 +62,7 @@ def normalize(A, tol=1e-6):
 def inv(A: MultiVector, tol=1e-6):
     Ar = A.reverse()
     n = A.sp(Ar)[0]
-    assert abs(n) > tol, f"norm {n}"
+    assert abs(n) > tol, f"normsq {n}"
     return Ar / n
 
 
@@ -110,11 +110,12 @@ def assert_not_simple(A, tol=1e-6):
     return Asquare[0]
 
 
-def P(X, A, tol=1e-6):  # projection of X onto a simple blade A
+def P(X, A: MultiVector, tol=1e-6):  # projection of X onto a simple blade A
+    alg = A.algebra
     Asquare = assert_simple(A)
     if abs(Asquare) < tol:
-        return (X | A) | A
-    return (1 / Asquare) * ((X | A) | A)
+        return alg.ip(X, A) | A
+    return (1 / Asquare) * (alg.ip(X, A) | A)
 
 
 def max_grade(B, tol=1e-6):

@@ -142,7 +142,7 @@ def reciprocal(blades):
         sign = (-1) ** (
             blades[k].grades[0] * sum(blade.grades[0] for blade in blades[:k])
         )
-        dualblades.append(sign * wedge(blades[:k] + blades[k + 1:]) * invI)
+        dualblades.append(sign * wedge(blades[:k] + blades[k + 1 :]) * invI)
     return dualblades
 
 
@@ -209,32 +209,75 @@ def differential(F, X, A, h=1e-6):
     return (1 / (2 * h)) * difference(F, X, A, h)
 
 
-def derivative(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None, operator=None):
+def derivative(
+    F,
+    X,
+    alg: Algebra,
+    h=1e-6,
+    grade=None,
+    frame=None,
+    r_frame=None,
+    Ix=None,
+    operator=None,
+):
     if not operator:
         operator = alg.gp
     if not frame:
         if grade or (grade == 0):
             frame = r_vector_frame(alg.frame, grade)
             r_frame = r_vector_frame(reciprocal(alg.frame), grade, reverse=True)
+        elif Ix:
+            frame = blade_split(Ix(X), alg)
+            r_frame = reciprocal(frame)
         else:
             frame = multi_frame(alg.frame)
             r_frame = reci_frame(alg.frame)
     return sum(operator(r, differential(F, X, v, h)) for v, r in zip(frame, r_frame))
 
 
-def curl(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
-    return derivative(F, X, alg, h, grade, frame, r_frame, operator=alg.op)
+def frame_gen(x, alg, Ix):
+    frame = blade_split(Ix(x), alg)
+    r_frame = reciprocal(frame)
+    return zip(frame, r_frame)
 
 
-def div(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
-    return derivative(F, X, alg, h, grade, frame, r_frame, operator=inner)
+def derivative_gen(x, alg, Ix, h=1e-6):
+    for v, r in frame_gen(x, alg, Ix):
+        yield (r, lambda F: differential(F, x, v, h))
+
+
+def curl(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None, Ix=None):
+    return derivative(F, X, alg, h, grade, frame, r_frame, Ix, operator=alg.op)
+
+
+def div(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None, Ix=None):
+    return derivative(F, X, alg, h, grade, frame, r_frame, Ix, operator=inner)
 
 
 def adjoint(F, X, A, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
     _F = derivative(
-        lambda X: alg.sp(F(X), (A)), X, alg, h=h, grade=grade, frame=frame, r_frame=r_frame
+        lambda X: alg.sp(F(X), (A)),
+        X,
+        alg,
+        h=h,
+        grade=grade,
+        frame=frame,
+        r_frame=r_frame,
     )
     return _F
+
+
+def d(T, x, B, alg: Algebra, Ix, h=1e-6):
+    frame = blade_split(Ix(x), alg)
+    r_frame = reciprocal(frame)
+    return sum(
+        differential(lambda x: T(x, alg.ip(B, r)), x, v, h=h)
+        for v, r in zip(frame, r_frame)
+    )
+
+
+def shape(Ix, alg):
+    return lambda x, A: derivative(lambda x: P(A, Ix(x)), x, alg, Ix=Ix)
 
 
 def extract_first_value(obj):
@@ -339,11 +382,11 @@ def blade_exp(B, tol=1e-6) -> MultiVector:
         return np.cosh(t) + np.sinh(t) * b
     if signature < -tol:
         return np.cos(t) + np.sin(t) * b
-    
+
 
 def simple_rotor_log(R: MultiVector, tol=1e-6):
     blade = R.grade(2)
-    signature = (blade ** 2)[0]
+    signature = (blade**2)[0]
     if signature > tol:
         return np.arccosh(R[0]) * normalize(blade)
     if signature < -tol:
@@ -476,3 +519,11 @@ def check_skew(F, alg: Algebra, tol=1e-6, grade=None):
     else:
         X = random_multivector(alg)
     return max_diff(adjoint(F, 0, X, alg, grade=grade), -F(X)) < tol
+
+
+def lie_bracket(ax, bx, Ix=None, h=1e-6):
+    if Ix:
+        return lambda x: differential(bx, x, P(ax(x), Ix(x)), h=h) - differential(
+            ax, x, P(bx(x), Ix(x)), h=h
+        )
+    return lambda x: differential(bx, x, ax(x), h=h) - differential(ax, x, bx(x), h=h)

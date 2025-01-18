@@ -267,13 +267,17 @@ def adjoint(F, X, A, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None)
     return _F
 
 
-def d(T, x, B, alg: Algebra, Ix, h=1e-6):
-    frame = blade_split(Ix(x), alg)
-    r_frame = reciprocal(frame)
-    return sum(
-        differential(lambda x: T(x, alg.ip(B, r)), x, v, h=h)
-        for v, r in zip(frame, r_frame)
-    )
+# def d(T, x, B, alg: Algebra, Ix, h=1e-6):
+#     frame = blade_split(Ix(x), alg)
+#     r_frame = reciprocal(frame)
+#     return sum(
+#         differential(lambda x: T(x, alg.ip(B, r)), x, v, h=h)
+#         for v, r in zip(frame, r_frame)
+#     )
+
+
+def d(T, x, B, alg, Ix, h=1e-6):
+    return sum(o(lambda x: T(x, inner(B,r))) for r, o in derivative_gen(x, alg, Ix, h))
 
 
 def shape(Ix, alg):

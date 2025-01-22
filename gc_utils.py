@@ -277,7 +277,7 @@ def adjoint(F, X, A, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None)
 
 
 def d(T, x, B, alg, Ix, h=1e-6):
-    return sum(o(lambda x: T(x, inner(B,r))) for r, o in derivative_gen(x, alg, Ix, h))
+    return sum(o(lambda x: T(x, inner(B, r))) for r, o in derivative_gen(x, alg, Ix, h))
 
 
 def shape(Ix, alg):

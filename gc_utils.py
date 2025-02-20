@@ -5,8 +5,13 @@ from kingdon import Algebra, MultiVector
 from math import factorial
 
 
+def random_vector(alg: Algebra):
+    vec = np.random.random(alg.d)
+    return alg.vector(vec)
+
+
 def random_multivector(alg: Algebra):
-    n = len(alg.blades.blades.keys())
+    n = 2**alg.d
     vec = np.random.random(n)
     return alg.multivector(vec)
 
@@ -34,7 +39,7 @@ def inner(A, B):
 
 
 def random_r_vectors(r, alg):
-    return [random_multivector(alg).grade(1) for _ in range(r)]
+    return [random_vector(alg) for _ in range(r)]
 
 
 def cyclic_reorder(_v, k):
@@ -209,62 +214,72 @@ def differential(F, X, A, h=1e-6):
     return (1 / (2 * h)) * difference(F, X, A, h)
 
 
-def derivative(
-    F,
-    X,
-    alg: Algebra,
-    h=1e-6,
-    grade=None,
-    frame=None,
-    r_frame=None,
-    Ix=None,
-    operator=None,
-):
-    if not operator:
-        operator = alg.gp
+def frame_gen(x, alg, **params):
+    """Generate frame and reciprocal frame pairs based on provided parameters."""
+    grade = params.get("grade")
+    frame = params.get("frame")
+    r_frame = params.get("r_frame")
+    Ix = params.get("Ix")
+
     if not frame:
-        if grade or (grade == 0):
+        if grade is not None:
             frame = r_vector_frame(alg.frame, grade)
             r_frame = r_vector_frame(reciprocal(alg.frame), grade, reverse=True)
         elif Ix:
-            frame = blade_split(Ix(X), alg)
+            frame = blade_split(Ix(x), alg)
             r_frame = reciprocal(frame)
         else:
             frame = multi_frame(alg.frame)
             r_frame = reci_frame(alg.frame)
-    return sum(operator(r, differential(F, X, v, h)) for v, r in zip(frame, r_frame))
 
-
-def frame_gen(x, alg, Ix):
-    frame = blade_split(Ix(x), alg)
-    r_frame = reciprocal(frame)
     return zip(frame, r_frame)
 
 
-def derivative_gen(x, alg, Ix, h=1e-6):
-    for v, r in frame_gen(x, alg, Ix):
+def derivative(F, X, alg: Algebra, h=1e-6, operator=None, **params):
+    """Compute the derivative of a function F at X."""
+    if not operator:
+        operator = alg.gp
+
+    frame_pairs = frame_gen(X, alg, **params)
+    return sum(operator(r, differential(F, X, v, h)) for v, r in frame_pairs)
+
+
+def derivative_gen(x, alg, h=1e-6, **params):
+    """Generate derivatives in a lazy evaluation style."""
+    for v, r in frame_gen(x, alg, **params):
         yield (r, lambda F: differential(F, x, v, h))
 
 
-def curl(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None, Ix=None):
-    return derivative(F, X, alg, h, grade, frame, r_frame, Ix, operator=alg.op)
+def curl(F, X, alg: Algebra, **params):
+    """Compute the curl of a function F at X using the outer product."""
+    return derivative(F, X, alg, operator=alg.op, **params)
 
 
-def div(F, X, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None, Ix=None):
-    return derivative(F, X, alg, h, grade, frame, r_frame, Ix, operator=inner)
+def div(F, X, alg: Algebra, **params):
+    """Compute the divergence of a function F at X using the inner product."""
+    return derivative(F, X, alg, operator=inner, **params)
 
 
-def adjoint(F, X, A, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None):
-    _F = derivative(
-        lambda X: alg.sp(F(X), (A)),
-        X,
-        alg,
-        h=h,
-        grade=grade,
-        frame=frame,
-        r_frame=r_frame,
-    )
+def adjoint(F, X, A, alg: Algebra, **params):
+    _F = derivative(lambda X: alg.sp(F(X), (A)), X, alg, **params)
     return _F
+
+
+def codiff(F, x, a, Ix, h=1e-6):
+    return P(differential(F, x, P(a, Ix(x)), h), Ix(x))
+
+
+def cocurl(A, x, alg, Ix, h=1e-6):
+    return P(curl(A, x, alg, Ix=Ix, h=h), Ix(x))
+
+
+def codiv(A, x, alg, Ix, h=1e-6):
+    return P(div(A, x, alg, Ix=Ix, h=h), Ix(x))
+
+
+def coderivative_gen(x, alg: Algebra, Ix=Ix, h=1e-6):
+    for v, r in frame_gen(x, alg, Ix=Ix):
+        yield (r, lambda F: codiff(F, x, v, Ix, h))
 
 
 # def d(T, x, B, alg: Algebra, Ix, h=1e-6):
@@ -276,8 +291,15 @@ def adjoint(F, X, A, alg: Algebra, h=1e-6, grade=None, frame=None, r_frame=None)
 #     )
 
 
+# exterior differential
 def d(T, x, B, alg, Ix, h=1e-6):
-    return sum(o(lambda x: T(x, inner(B, r))) for r, o in derivative_gen(x, alg, Ix, h))
+    return sum(
+        o(lambda x: T(x, inner(B, r))) for r, o in derivative_gen(x, alg, h, Ix=Ix)
+    )
+
+
+def projection_differential(Ix, a, h=1e-3):
+    return lambda A: lambda x: differential(lambda a: P(A(x), Ix(a)), x, P(a(x), Ix(x)), h=h)
 
 
 def shape(Ix, alg):
@@ -308,7 +330,7 @@ def blade_split(A, alg):
     Ar, g = sort_grades_by_normsq(A)[-1]
     projects = sorted([P(e, Ar) for e in alg.frame], key=normsq)[-g:]
     wed = gprod(projects)
-    ratio = np.median(terms_ratio(wed, Ar))
+    ratio = np.median(terms_ratio(Ar, wed))
     projects[0] *= ratio
     return projects
 
@@ -425,6 +447,23 @@ def outermorphism(f, A: MultiVector, alg, h=1e-6, frame=None, r_frame=None):
     return outer
 
 
+def outermorphism_(f, A, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
+    def f_outer(x):
+        nonlocal frame, r_frame
+        if Ix:
+            frame = blade_split(Ix(x), alg)
+            r_frame = reciprocal(frame)
+        wf = lambda vectors: wedge([f(v)(x) for v in vectors])
+        outer = 0
+        for r in A.grades:
+            if r == 0:
+                outer += A.grade(0)
+                continue
+            outer += skew_symmetrizer(wf, A.grade(r), alg, h, frame, r_frame)
+        return outer
+    return f_outer
+
+
 def adjoint_outermorphism(f, A, alg, h=1e-6, frame=None, r_frame=None):
     F = lambda vectors: wedge([f(v) for v in vectors]).sp(A)
     outer = 0
@@ -435,6 +474,24 @@ def adjoint_outermorphism(f, A, alg, h=1e-6, frame=None, r_frame=None):
         # Why np.zeros(r)? The derivative of a linear function is constant
         outer += simplicial_derivative(F, np.zeros(r), alg, h, frame, r_frame)
     return outer
+
+
+def adjoint_outermorphism_(f, A, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
+    def f_outer(x):
+        nonlocal frame, r_frame
+        if Ix:
+            frame = blade_split(Ix(x), alg)
+            r_frame = reciprocal(frame)
+        F = lambda vectors: wedge([f(v)(x) for v in vectors]).sp(A)
+        outer = 0
+        for r in A.grades:
+            if r == 0:
+                outer += A.grade(0)
+                continue
+            # Why np.zeros(r)? The derivative of a linear function is constant
+            outer += simplicial_derivative(F, np.zeros(r), alg, h, frame, r_frame)
+        return outer
+    return f_outer
 
 
 def sym_part(f, alg):
@@ -525,9 +582,29 @@ def check_skew(F, alg: Algebra, tol=1e-6, grade=None):
     return max_diff(adjoint(F, 0, X, alg, grade=grade), -F(X)) < tol
 
 
-def lie_bracket(ax, bx, Ix=None, h=1e-6):
-    if Ix:
-        return lambda x: differential(bx, x, P(ax(x), Ix(x)), h=h) - differential(
-            ax, x, P(bx(x), Ix(x)), h=h
-        )
-    return lambda x: differential(bx, x, ax(x), h=h) - differential(ax, x, bx(x), h=h)
+# def lie_bracket(ax, bx, Ix=None, h=1e-6):
+#     if Ix:
+#         return lambda x: differential(bx, x, P(ax(x), Ix(x)), h=h) - differential(
+#             ax, x, P(bx(x), Ix(x)), h=h
+#         )
+#     return lambda x: differential(bx, x, ax(x), h=h) - differential(ax, x, bx(x), h=h)
+
+
+def lie_bracket(A, B, alg, Ix, h=1e-6):
+    return lambda x: sum(
+        (inner(A(x), r) ^ o(B)) - (o(A) ^ inner(r, B(x)))
+        for r, o in derivative_gen(x, alg, h, Ix=Ix)
+    )
+
+
+# For fields on the manifold, the dual should be just on the manifold
+# For fields in the embedding space, the dual should be in the embedding space
+def dual_bracket(A, B, alg, nIx, h=1e-6):
+    # nIx: normalized pseudoscalar
+    return lambda x: lie_bracket(A, lambda x: B(x) * nIx(x), alg, nIx, h)(x) * inv(
+        nIx(x)
+    )
+
+
+def dual_bracket_emb(A, B, alg: Algebra, Ix, h=1e-6):
+    return lambda x: lie_bracket(A, lambda x: B(x).dual(), alg, Ix, h)(x).undual()

@@ -277,7 +277,7 @@ def codiv(A, x, alg, Ix, h=1e-6):
     return P(div(A, x, alg, Ix=Ix, h=h), Ix(x))
 
 
-def coderivative_gen(x, alg: Algebra, Ix=Ix, h=1e-6):
+def coderivative_gen(x, alg: Algebra, Ix, h=1e-6):
     for v, r in frame_gen(x, alg, Ix=Ix):
         yield (r, lambda F: codiff(F, x, v, Ix, h))
 
@@ -447,7 +447,7 @@ def outermorphism(f, A: MultiVector, alg, h=1e-6, frame=None, r_frame=None):
     return outer
 
 
-def outermorphism_(f, A, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
+def outermorphism_(f, field, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
     def f_outer(x):
         nonlocal frame, r_frame
         if Ix:
@@ -455,6 +455,7 @@ def outermorphism_(f, A, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
             r_frame = reciprocal(frame)
         wf = lambda vectors: wedge([f(v)(x) for v in vectors])
         outer = 0
+        A = field if isinstance(field, MultiVector) else field(x)
         for r in A.grades:
             if r == 0:
                 outer += A.grade(0)
@@ -476,7 +477,7 @@ def adjoint_outermorphism(f, A, alg, h=1e-6, frame=None, r_frame=None):
     return outer
 
 
-def adjoint_outermorphism_(f, A, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
+def adjoint_outermorphism_(f, field, alg, h=1e-6, frame=None, r_frame=None, Ix=None):
     def f_outer(x):
         nonlocal frame, r_frame
         if Ix:
@@ -484,6 +485,7 @@ def adjoint_outermorphism_(f, A, alg, h=1e-6, frame=None, r_frame=None, Ix=None)
             r_frame = reciprocal(frame)
         F = lambda vectors: wedge([f(v)(x) for v in vectors]).sp(A)
         outer = 0
+        A = field if isinstance(field, MultiVector) else field(x)
         for r in A.grades:
             if r == 0:
                 outer += A.grade(0)
@@ -608,3 +610,38 @@ def dual_bracket(A, B, alg, nIx, h=1e-6):
 
 def dual_bracket_emb(A, B, alg: Algebra, Ix, h=1e-6):
     return lambda x: lie_bracket(A, lambda x: B(x).dual(), alg, Ix, h)(x).undual()
+
+
+# 5.12c adjoint-outermorphism is the pullback/chain rule of derivatives
+# without explicit define the inverse of f, we push forward the frame
+
+def f_derivative_gen(x, f, alg, Ix, h=1e-6):
+    f_vec = lambda a: lambda x: differential(f, x, a)
+    f_ = lambda A: outermorphism_(f_vec, A, alg, Ix=Ix)
+    for v, r in frame_gen(x, alg, Ix=f_(Ix)):
+        yield (r, lambda F: differential(F, f(x), v, h))
+
+# Say f: M -> N
+# "back" as the derivative acts on a field G on N
+# Yet mimicking the derivative of G(f(x)) on M
+
+
+def back_derivative_gen(x, f, alg, Ix, h=1e-6):
+    f_vec = lambda a: lambda x: differential(f, x, a)
+    f_ = lambda A: outermorphism_(f_vec, A, alg, Ix=Ix)
+    fa_ = lambda A: adjoint_outermorphism_(f_vec, A, alg, Ix=Ix)
+    for v, r in frame_gen(x, alg, Ix=f_(Ix)):
+        yield (fa_(r)(x), lambda F: differential(F, f(x), v, h))
+
+
+# 5.14 "forward" as the derivative acts on a field F on M
+# Yet mimicking the derivative of F(inv(f)(x)) on N
+
+def forward_derivative_gen(x, f, alg, Ix, h=1e-6):
+    f_vec = lambda a: lambda x: differential(f, x, a)
+    f_ = lambda A: outermorphism_(f_vec, A, alg, Ix=Ix)
+    nIx = lambda x: normalize(Ix(x))
+    nI = nIx(x)
+    iI1 = inv(f_(nIx)(x))
+    for v, r in frame_gen(x, alg, Ix=Ix):
+        yield iI1 * f_(nI*r)(x), lambda F: differential(F, x, v, h)

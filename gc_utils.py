@@ -98,12 +98,15 @@ def random_r_blade(r, alg):
     return wedge(random_r_vectors(r, alg))
 
 
+# Not a compact assertion
+# But enough for dimension < 6?
+# e123 + e456 is not simple, but passed
 def assert_simple(A, tol=1e-8):
     Asquare = A**2
     if isinstance(A, (int, float)):
         return Asquare
     if Asquare[1:]:
-        assert np.max(np.abs(Asquare[1:])) < tol, f"{Asquare[1:]}, not simple"
+        assert np.max(np.abs(Asquare[1:])) < tol, f"not simple, {Asquare[1:]}"
     return Asquare[0]
 
 
@@ -303,7 +306,15 @@ def projection_differential(Ix, a, h=1e-3):
 
 
 def shape(Ix, alg):
-    return lambda x, A: derivative(lambda x: P(A, Ix(x)), x, alg, Ix=Ix)
+    return lambda x: lambda A: derivative(lambda x: P(A, Ix(x)), x, alg, Ix=Ix)
+
+
+def manifold_curl(Ix, alg):
+    return lambda x: lambda A: curl(lambda x: P(A, Ix(x)), x, alg, Ix=Ix)
+
+
+def manifold_spur(Ix, alg):
+    return lambda x: sum(o(lambda x: P(r, Ix(x))) for r, o in derivative_gen(x, alg, Ix=Ix))
 
 
 def extract_first_value(obj):
@@ -326,6 +337,7 @@ def sort_grades_by_normsq(A):
     return sorted([(A.grade(g), g) for g in A.grades], key=lambda item: normsq(item[0]))
 
 
+# FIXME: use ip istead of the projection
 def blade_split(A, alg):
     Ar, g = sort_grades_by_normsq(A)[-1]
     projects = sorted([P(e, Ar) for e in alg.frame], key=normsq)[-g:]
